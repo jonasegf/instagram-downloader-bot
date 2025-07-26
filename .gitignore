@@ -16,3 +16,6 @@ users.log
 
 # admin data file
 admin.json
+
+# session file
+session*
