@@ -1,0 +1,20 @@
+{
+  "name": "Instagram Downloader Bot Dev Container",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/poetry:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "settings": {
+    "python.pythonPath": "/usr/local/bin/python",
+    "python.formatting.provider": "black"
+  },
+  "postCreateCommand": "poetry install",
+  "extensions": [
+    "ms-python.python",
+    "ms-python.vscode-pylance"
+  ],
+  "forwardPorts": [],
+  "remoteUser": "vscode"
+}
