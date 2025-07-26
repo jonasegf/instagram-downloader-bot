@@ -1,17 +1,19 @@
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
-from telegram import ChatAction
-import threading
-import logging
-import re
-import os
-from instaloader import Instaloader, Post
-from dotenv import load_dotenv
-import requests
 import json
+import logging
+import os
+import re
+import threading
 from datetime import datetime
+
 import pytz
-from telegram import ParseMode  # For safe formatting
-TASHKENT_TZ = pytz.timezone("Asia/Tashkent")
+import requests
+from dotenv import load_dotenv
+from instaloader import Instaloader, Post
+from telegram import Update
+from telegram.constants import ChatAction
+from telegram.ext import CommandHandler, MessageHandler, filters, ApplicationBuilder, ContextTypes
+
+TASHKENT_TZ = pytz.timezone("America/Sao_Paulo")  # Change to your desired timezone
 
 # Load environment variables
 load_dotenv()
@@ -102,12 +104,12 @@ def log_user_data(user):
         logger.error(f"Error logging user data: {e}")
 
 # Command to list users and total counts
-def list_users(update, context):
+async def list_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     admin_id = get_admin()
 
     if user.id != admin_id:
-        update.message.reply_text("❌ You don't have permission to use this command.")
+        await update.message.reply_text("❌ You don't have permission to use this command.")
         return
 
     try:
@@ -116,7 +118,7 @@ def list_users(update, context):
                 users = json.load(file)
 
             if not users:
-                update.message.reply_text("No users have used the bot yet.")
+                await update.message.reply_text("No users have used the bot yet.")
                 return
 
             # Calculate total users and users who used the bot today
@@ -136,13 +138,12 @@ def list_users(update, context):
                     f"   First Name: {u['first_name']}\n"
                     f"   Last Active: {u['timestamp']}\n\n"
                 )
-            update.message.reply_text(response)
+            await update.message.reply_text(response)
         else:
-            update.message.reply_text("No user log file found. No users have used the bot yet.")
+            await update.message.reply_text("No user log file found. No users have used the bot yet.")
     except Exception as e:
         logger.error(f"Error reading user log file: {e}")
-        update.message.reply_text("⚠️ An error occurred while retrieving user data.")
-
+        await update.message.reply_text("⚠️ An error occurred while retrieving user data.")
 
 # Helper functions
 def extract_shortcode(instagram_post):
@@ -165,44 +166,40 @@ def fetch_instagram_data(instagram_post):
         return None
 
 # Command: Start
-def start(update, context):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     log_user_data(user)
 
     if get_admin() is None:
         set_admin(user.id)
-        update.message.reply_text("👑 You have been set as the admin!")
+        await update.message.reply_text("👑 You have been set as the admin!")
 
-    update.message.reply_text(
-        "👋 Welcome to the Instagram Saver Bot!\n\n"
+    await update.message.reply_text(
+        "👋 Welcome to the Instagram Saver Bot Fork!\n\n"
         "📩 Send me any **public** Instagram link (post, reel, or IGTV), and I'll fetch the media for you.\n"
         "⚠️ Make sure the post is **public** and not private.\n\n"
         "Happy downloading! 🎉"
     )
 
 # Handle: Download with Threading
-def download(update, context):
-    thread = threading.Thread(target=process_download, args=(update, context))
-    thread.start()
-
-def process_download(update, context):
+async def download(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     log_user_data(user)
 
     instagram_post = update.effective_message.text.strip()
     if not is_valid_instagram_url(instagram_post):
-        update.message.reply_text("❌ Invalid Instagram URL. Please send a valid post, Reel, or IGTV link.")
+        await update.message.reply_text("❌ Invalid Instagram URL. Check the url.")
         return
 
-    update.message.reply_chat_action(ChatAction.TYPING)
-    progress_message = update.message.reply_text("⏳ Fetching your media...")
+    await update.message.reply_chat_action(ChatAction.TYPING)
+    progress_message = await update.message.reply_text("⏳ Fetching media...")
 
     media_url = fetch_instagram_data(instagram_post)
     if not media_url:
-        progress_message.edit_text("❌ Failed to fetch media. Ensure the post is public and try again.")
+        await progress_message.edit_text("❌ Failure fetching media. Check if the post is public or try again later.")
         return
 
-    file_name = f"temp_{update.message.chat_id}.mp4" if "video" in media_url else f"temp_{update.message.chat_id}.jpg"
+    file_name = f"temp_{update.message.chat_id}.mp4" if "mp4" in media_url else f"temp_{update.message.chat_id}.jpg"
     try:
         response = requests.get(media_url, stream=True)
         response.raise_for_status()
@@ -211,31 +208,29 @@ def process_download(update, context):
                 f.write(chunk)
 
         with open(file_name, "rb") as file:
-            if "video" in media_url:
-                context.bot.send_video(chat_id=update.message.chat_id, video=file, caption="👾 Powered by @Instasave_downloader_bot")
+            if "mp4" in file_name:
+                await context.bot.send_video(chat_id=update.message.chat_id, video=file, caption="👾 Powered by @Instasave_downloader_bot")
             else:
-                context.bot.send_photo(chat_id=update.message.chat_id, photo=file, caption="👾 Powered by @Instasave_downloader_bot")
+                await context.bot.send_photo(chat_id=update.message.chat_id, photo=file, caption="👾 Powered by @Instasave_downloader_bot")
 
-        progress_message.delete()
+        await progress_message.delete()
     except Exception as e:
-        logger.error(f"Error sending media: {e}")
-        progress_message.edit_text("❌ Failed to send media. Please try again later.")
+        logger.error(f"Failure when sending media: {e}")
+        await progress_message.edit_text("❌ Failure when sending media, try again later.")
     finally:
         if os.path.exists(file_name):
             os.remove(file_name)
 
 # Main function
 def main():
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
+    application = ApplicationBuilder().token(TOKEN).build()
 
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("users", list_users))  # Add /users command
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, download))
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("users", list_users))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download))
 
-    updater.start_polling()
+    application.run_polling()
     logger.info("Bot started and polling for updates...")
-    updater.idle()
 
 if __name__ == "__main__":
     main()
