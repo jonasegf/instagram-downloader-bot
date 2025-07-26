@@ -5,10 +5,11 @@ import re
 import threading
 from datetime import datetime
 
+import instaloader
 import pytz
 import requests
 from dotenv import load_dotenv
-from instaloader import Instaloader, Post
+from instaloader import Instaloader, Post, PostSidecarNode
 from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import CommandHandler, MessageHandler, filters, ApplicationBuilder, ContextTypes
@@ -51,8 +52,6 @@ def load_or_create_session():
         else:
             loader.login(USERNAME, PASSWORD)
             loader.save_session_to_file(SESSION_FILE)
-
-load_or_create_session()
 
 # Admin-related functions
 def get_admin():
@@ -174,6 +173,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         set_admin(user.id)
         await update.message.reply_text("👑 You have been set as the admin!")
 
+    if get_admin() == user.id:
+        await update.message.reply_text("❌ You don't have permission to use this command.")
+        return
+
+    load_or_create_session()
+
     await update.message.reply_text(
         "👋 Welcome to the Instagram Saver Bot Fork!\n\n"
         "📩 Send me any **public** Instagram link (post, reel, or IGTV), and I'll fetch the media for you.\n"
@@ -183,6 +188,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Handle: Download with Threading
 async def download(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if get_admin() == user.id:
+        await update.message.reply_text("❌ You don't have permission to use this command.")
+        return
+
     user = update.effective_user
     log_user_data(user)
 
